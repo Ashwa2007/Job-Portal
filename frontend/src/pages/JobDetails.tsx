@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
     Building2,
     MapPin,
-    DollarSign,
+    IndianRupee,
     Clock,
     Briefcase,
     ArrowLeft,
@@ -307,7 +307,7 @@ const JobDetails: React.FC = () => {
                                 { icon: <Calendar size={18} />, label: 'Posted on', value: new Date(job.created_at).toDateString() },
                                 { icon: <MapPin size={18} />, label: 'Location', value: job.location },
                                 { icon: <Briefcase size={18} />, label: 'Job Type', value: job.job_type.replace('_', ' ') },
-                                { icon: <DollarSign size={18} />, label: 'Salary', value: job.salary_range },
+                                { icon: <IndianRupee size={18} />, label: 'Salary', value: job.salary_range },
                             ].map((item, i) => (
                                 <div key={i} className="flex gap-3">
                                     <div className="text-primary-500">{item.icon}</div>
@@ -332,8 +332,8 @@ const JobDetails: React.FC = () => {
                                 onClick={handleToggleFollow}
                                 disabled={followingLoading}
                                 className={`w-full py-3.5 rounded-2xl font-black text-sm transition-all flex items-center justify-center gap-2 border-none cursor-pointer ${isFollowing
-                                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                                        : 'bg-primary-600 text-white shadow-lg shadow-primary-500/20 hover:bg-primary-700'
+                                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                                    : 'bg-primary-600 text-white shadow-lg shadow-primary-500/20 hover:bg-primary-700'
                                     }`}
                             >
                                 {isFollowing ? (

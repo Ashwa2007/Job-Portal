@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
     Building2,
     MapPin,
-    DollarSign,
+    IndianRupee,
     Briefcase,
     FileText,
     Plus,
@@ -213,13 +213,13 @@ const PostJob: React.FC = () => {
                     <div className="space-y-2">
                         <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Salary Range</label>
                         <div className="relative">
-                            <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+                            <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
                             <input
                                 type="text"
                                 name="salary_range"
                                 value={formData.salary_range}
                                 onChange={handleChange}
-                                placeholder="e.g. $120k - $150k"
+                                placeholder="e.g. ₹5L - ₹8L"
                                 className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl outline-none focus:ring-2 focus:ring-primary-500 transition-all dark:text-white"
                             />
                         </div>

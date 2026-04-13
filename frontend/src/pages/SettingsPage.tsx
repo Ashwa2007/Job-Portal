@@ -130,18 +130,32 @@ const SettingsPage: React.FC = () => {
     };
 
     const handleDeactivate = async () => {
-        if (window.confirm('Are you sure you want to PERMANENTLY delete your account? This cannot be undone.')) {
+        const confirmed = window.confirm('CRITICAL ACTION: Are you sure you want to PERMANENTLY delete your account? All your jobs, updates and applications will be deleted forever.');
+
+        if (confirmed) {
+            setLoading(true);
             try {
                 const response = await fetch('http://127.0.0.1:5001/api/user/deactivate', {
                     method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
                 });
+
+                const data = await response.json();
+
                 if (response.ok) {
-                    alert('Account deactivated. We are sorry to see you go.');
+                    alert('Account permanently deleted. Hope to see you again!');
                     logout();
+                } else {
+                    alert('Deactivation Failed: ' + (data.message || 'Server error'));
                 }
             } catch (error) {
-                console.error('Deactivate error:', error);
+                console.error('Deactivate connection error:', error);
+                alert('Connection Error: Could not reach the server to deactivate account.');
+            } finally {
+                setLoading(false);
             }
         }
     };

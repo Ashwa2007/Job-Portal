@@ -3,7 +3,7 @@ import {
     Search,
     MapPin,
     Briefcase,
-    DollarSign,
+    IndianRupee,
     Clock,
     ChevronRight,
     TrendingUp,
@@ -210,7 +210,7 @@ const JobsPage: React.FC = () => {
                                     </div>
                                     <div className="flex items-center gap-6">
                                         <div className="flex items-center gap-1.5 text-slate-900 dark:text-white font-bold">
-                                            <DollarSign size={18} className="text-green-500" />
+                                            <IndianRupee size={18} className="text-green-500" />
                                             {job.salary_range}
                                         </div>
                                         <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 text-sm">

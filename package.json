@@ -1,0 +1,10 @@
+{
+    "name": "job-portal-monorepo",
+    "version": "1.0.0",
+    "description": "Job Portal Monorepo",
+    "scripts": {
+        "install-all": "npm install --prefix frontend",
+        "build-frontend": "npm run build --prefix frontend",
+        "start": "bash start.sh"
+    }
+}

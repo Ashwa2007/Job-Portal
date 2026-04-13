@@ -19,7 +19,7 @@ const iconsArray = [
                 alt='Python'
             />
         ),
-        className: 'size-[40px] border-none bg-transparent',
+        className: 'size-[4 0px] border-none bg-transparent',
         duration: 25,
         delay: 10,
         radius: 120,
@@ -79,7 +79,11 @@ const iconsArray = [
 const LoginPage: React.FC = () => {
     const [formData, setFormData] = useState({ email: '', password: '' });
     const [error, setError] = useState<string | null>(null);
+    const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [mode, setMode] = useState<'login' | 'forgot' | 'reset'>('login');
+    const [otp, setOtp] = useState('');
+    const [newPassword, setNewPassword] = useState('');
     const navigate = useNavigate();
     const { login } = useAuth();
 
@@ -120,6 +124,83 @@ const LoginPage: React.FC = () => {
         }
     };
 
+    const handleForgotPassword = async (e: FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        setIsLoading(true);
+        setError(null);
+        try {
+            const response = await fetch('http://127.0.0.1:5001/api/auth/forgot-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: formData.email })
+            });
+            const data = await response.json();
+            if (response.ok) {
+                setSuccessMessage(data.message);
+                setMode('reset');
+            } else {
+                setError(data.message);
+            }
+        } catch (error) {
+            setError('Failed to send OTP.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleResetPassword = async (e: FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        setIsLoading(true);
+        setError(null);
+        try {
+            const response = await fetch('http://127.0.0.1:5001/api/auth/reset-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: formData.email, otp, new_password: newPassword })
+            });
+            const data = await response.json();
+            if (response.ok) {
+                setSuccessMessage('Password reset successfully! You can now login.');
+                setMode('login');
+                setOtp('');
+                setNewPassword('');
+            } else {
+                setError(data.message);
+            }
+        } catch (error) {
+            setError('Failed to reset password.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleGoogleSuccess = async (credentialResponse: any) => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const response = await fetch('http://127.0.0.1:5001/api/auth/google', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: credentialResponse.credential })
+            });
+
+            if (!response.ok) {
+                const data = await response.json();
+                setError(data.message || 'Google login failed.');
+                return;
+            }
+
+            const data = await response.json();
+            login(data.user, data.access_token);
+            navigate('/login-success');
+        } catch (error) {
+            console.error('Google login error:', error);
+            setError('Connection Error: Unable to reach auth server.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const formFields = {
         header: 'Welcome Back',
         subHeader: 'Login to your premium career portal',
@@ -141,6 +222,43 @@ const LoginPage: React.FC = () => {
         ],
         submitButton: isLoading ? 'Signing in...' : 'Sign In',
         textVariantButton: "Create a new account instead",
+    };
+
+    const forgotFields = {
+        header: 'Reset Password',
+        subHeader: 'Enter your email to receive an OTP',
+        fields: [
+            {
+                label: 'Email',
+                required: true,
+                type: 'email',
+                placeholder: 'john@example.com',
+                onChange: handleInputChange,
+            },
+        ],
+        submitButton: isLoading ? 'Sending...' : 'Send OTP',
+    };
+
+    const resetFields = {
+        header: 'New Password',
+        subHeader: `Verify the OTP sent to ${formData.email}`,
+        fields: [
+            {
+                label: 'OTP',
+                required: true,
+                type: 'otp',
+                placeholder: '6-digit code',
+                onChange: (e: ChangeEvent<HTMLInputElement>) => setOtp(e.target.value),
+            },
+            {
+                label: 'New Password',
+                required: true,
+                type: 'password',
+                placeholder: 'Min 6 characters',
+                onChange: (e: ChangeEvent<HTMLInputElement>) => setNewPassword(e.target.value),
+            },
+        ],
+        submitButton: isLoading ? 'Resetting...' : 'Reset Password',
     };
 
     return (
@@ -166,26 +284,58 @@ const LoginPage: React.FC = () => {
                         </div>
 
                         <AnimatePresence mode='wait'>
-                            {error && (
+                            {(error || successMessage) && (
                                 <motion.div
                                     initial={{ opacity: 0, y: -10 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, y: -10 }}
-                                    className="w-full mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 rounded-2xl flex items-center gap-3 text-red-600 dark:text-red-400 text-sm font-bold"
+                                    className={`w-full mb-6 p-4 rounded-2xl flex items-center gap-3 text-sm font-bold border ${error
+                                        ? 'bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900/30 text-red-600 dark:text-red-400'
+                                        : 'bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-900/30 text-green-600 dark:text-green-400'
+                                        }`}
                                 >
-                                    <AlertCircle size={18} />
-                                    {error}
+                                    {error ? <AlertCircle size={18} /> : <ShieldCheck size={18} />}
+                                    {error || successMessage}
                                 </motion.div>
                             )}
                         </AnimatePresence>
                     </div>
 
-                    <AuthTabs
-                        formFields={formFields}
-                        goTo={() => navigate('/signup')}
-                        handleSubmit={handleSubmit}
-                        googleLogin="Login with Google"
-                    />
+                    {mode === 'login' && (
+                        <>
+                            <AuthTabs
+                                formFields={formFields}
+                                goTo={() => navigate('/signup')}
+                                handleSubmit={handleSubmit}
+                                googleLogin="Login with Google"
+                                onGoogleSuccess={handleGoogleSuccess}
+                            />
+                            <div className="mt-4 text-center">
+                                <button
+                                    onClick={() => setMode('forgot')}
+                                    className="text-primary-600 hover:text-primary-700 text-sm font-semibold transition-colors"
+                                >
+                                    Forgot Password?
+                                </button>
+                            </div>
+                        </>
+                    )}
+
+                    {mode === 'forgot' && (
+                        <AuthTabs
+                            formFields={forgotFields}
+                            goTo={() => setMode('login')}
+                            handleSubmit={handleForgotPassword}
+                        />
+                    )}
+
+                    {mode === 'reset' && (
+                        <AuthTabs
+                            formFields={resetFields}
+                            goTo={() => setMode('forgot')}
+                            handleSubmit={handleResetPassword}
+                        />
+                    )}
 
                     <div className="mt-8 pt-8 border-t border-slate-100 dark:border-slate-800 flex justify-center">
                         <Link to="/" className="text-slate-400 hover:text-primary-600 transition-colors text-sm font-bold flex items-center gap-2">

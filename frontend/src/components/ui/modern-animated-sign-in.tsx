@@ -9,6 +9,7 @@ import {
     type ChangeEvent,
     type FormEvent,
 } from 'react';
+import { GoogleLogin } from '@react-oauth/google';
 
 import {
     motion,
@@ -19,6 +20,70 @@ import {
 } from 'framer-motion';
 import { Eye, EyeOff } from 'lucide-react';
 import { cn } from '../../lib/utils';
+
+// ==================== Segmented OTP Component ====================
+
+interface SegmentedOTPProps {
+    onChange: (value: string) => void;
+    length?: number;
+}
+
+const SegmentedOTP = memo(({ onChange, length = 6 }: SegmentedOTPProps) => {
+    const [otp, setOtp] = useState<string[]>(new Array(length).fill(""));
+    const inputsRef = useRef<(HTMLInputElement | null)[]>([]);
+
+    const handleChange = (element: HTMLInputElement, index: number) => {
+        if (isNaN(Number(element.value))) return false;
+
+        const newOtp = [...otp];
+        newOtp[index] = element.value.substring(element.value.length - 1);
+        setOtp(newOtp);
+        onChange(newOtp.join(""));
+
+        // Move to next input if value is entered
+        if (element.value && index < length - 1) {
+            inputsRef.current[index + 1]?.focus();
+        }
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
+        if (e.key === "Backspace" && !otp[index] && index > 0) {
+            inputsRef.current[index - 1]?.focus();
+        }
+    };
+
+    const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+        const data = e.clipboardData.getData("text").substring(0, length);
+        if (isNaN(Number(data))) return;
+
+        const pasteOtp = data.split("");
+        const newOtp = [...otp];
+        pasteOtp.forEach((char, i) => {
+            newOtp[i] = char;
+        });
+        setOtp(newOtp);
+        onChange(newOtp.join(""));
+    };
+
+    return (
+        <div className="flex justify-between gap-2 w-full" onPaste={handlePaste}>
+            {otp.map((data, index) => (
+                <input
+                    key={index}
+                    type="text"
+                    maxLength={1}
+                    className="w-full h-12 text-center text-xl font-bold bg-gray-50 dark:bg-zinc-800 border-none rounded-lg shadow-input dark:shadow-[0px_0px_1px_1px_#404040] focus:ring-2 focus:ring-primary-500 outline-none transition-all dark:text-white"
+                    value={data}
+                    onChange={(e) => handleChange(e.target, index)}
+                    onKeyDown={(e) => handleKeyDown(e, index)}
+                    ref={(el) => { inputsRef.current[index] = el; }}
+                />
+            ))}
+        </div>
+    );
+});
+
+SegmentedOTP.displayName = 'SegmentedOTP';
 
 // ==================== Input Component ====================
 
@@ -333,6 +398,7 @@ type AnimatedFormProps = {
     fieldPerRow?: number;
     onSubmit: (event: FormEvent<HTMLFormElement>) => void;
     googleLogin?: string;
+    onGoogleSuccess?: (credentialResponse: any) => void;
     goTo?: (event: React.MouseEvent<HTMLButtonElement>) => void;
 };
 
@@ -350,6 +416,7 @@ const AnimatedForm = memo(function AnimatedForm({
     fieldPerRow = 1,
     onSubmit,
     googleLogin,
+    onGoogleSuccess,
     goTo,
 }: AnimatedFormProps) {
     const [visible, setVisible] = useState<boolean>(false);
@@ -386,8 +453,21 @@ const AnimatedForm = memo(function AnimatedForm({
         if (Object.keys(formErrors).length === 0) {
             onSubmit(event);
         } else {
+            console.log('Form validation failed:', formErrors);
             setErrors(formErrors);
         }
+    };
+
+    const handleFieldChange = (field: Field, e: ChangeEvent<HTMLInputElement>) => {
+        // Clear error for this field when user types
+        if (errors[field.label]) {
+            setErrors(prev => {
+                const newErrors = { ...prev };
+                delete newErrors[field.label];
+                return newErrors;
+            });
+        }
+        field.onChange(e);
     };
 
     return (
@@ -412,24 +492,21 @@ const AnimatedForm = memo(function AnimatedForm({
                         boxColor='var(--skeleton)'
                         duration={0.3}
                         overflow='visible'
-                        width='unset'
+                        width='100%'
+                        className="flex justify-center"
                     >
-                        <button
-                            className='g-button group/btn bg-transparent w-full rounded-md border h-10 font-medium outline-none hover:cursor-pointer transition-all dark:border-neutral-700'
-                            type='button'
-                            onClick={() => console.log('Google login clicked')}
-                        >
-                            <span className='flex items-center justify-center w-full h-full gap-3'>
-                                <img
-                                    src='https://cdn1.iconfinder.com/data/icons/google-s-logo/150/Google_Icons-09-512.png'
-                                    className="w-6 h-6"
-                                    alt='Google Icon'
-                                />
-                                <span className="dark:text-white">{googleLogin}</span>
-                            </span>
-
-                            <BottomGradient />
-                        </button>
+                        <div className="w-full flex justify-center">
+                            <GoogleLogin
+                                onSuccess={onGoogleSuccess || (() => { })}
+                                onError={() => {
+                                    console.error('Google Login Error: Check if http://localhost:5173 is whitelisted in Google Console.');
+                                }}
+                                useOneTap
+                                theme="outline"
+                                shape="pill"
+                                width="350px"
+                            />
+                        </div>
                     </BoxReveal>
 
                     <BoxReveal boxColor='var(--skeleton)' duration={0.3} width='100%'>
@@ -463,19 +540,44 @@ const AnimatedForm = memo(function AnimatedForm({
                                 className='flex flex-col space-y-2 w-full'
                             >
                                 <section className='relative'>
-                                    <Input
-                                        name={field.label}
-                                        type={
-                                            field.type === 'password'
-                                                ? visible
-                                                    ? 'text'
-                                                    : 'password'
-                                                : field.type
-                                        }
-                                        id={field.label}
-                                        placeholder={field.placeholder}
-                                        onChange={field.onChange}
-                                    />
+                                    {field.type === 'otp' ? (
+                                        <>
+                                            <SegmentedOTP
+                                                onChange={(val) => {
+                                                    // Sync with hidden input for validation
+                                                    const hiddenInput = document.getElementById(`hidden-otp-${field.label}`) as HTMLInputElement;
+                                                    if (hiddenInput) {
+                                                        hiddenInput.value = val;
+                                                    }
+
+                                                    // Trigger fake event for parent state and clear errors
+                                                    const event = {
+                                                        target: { name: field.label, value: val, id: field.label }
+                                                    } as any;
+                                                    handleFieldChange(field, event);
+                                                }}
+                                            />
+                                            <input
+                                                type="hidden"
+                                                id={`hidden-otp-${field.label}`}
+                                                name={field.label}
+                                            />
+                                        </>
+                                    ) : (
+                                        <Input
+                                            name={field.label}
+                                            type={
+                                                field.type === 'password'
+                                                    ? visible
+                                                        ? 'text'
+                                                        : 'password'
+                                                    : field.type
+                                            }
+                                            id={field.label}
+                                            placeholder={field.placeholder}
+                                            onChange={(e) => handleFieldChange(field, e)}
+                                        />
+                                    )}
 
                                     {field.type === 'password' && (
                                         <button
@@ -574,13 +676,15 @@ interface AuthTabsProps {
     goTo: (event: React.MouseEvent<HTMLButtonElement>) => void;
     handleSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
     googleLogin?: string;
+    onGoogleSuccess?: (credentialResponse: any) => void;
 }
 
 const AuthTabs = memo(function AuthTabs({
     formFields,
     goTo,
     handleSubmit,
-    googleLogin = 'Login with Google'
+    googleLogin = 'Login with Google',
+    onGoogleSuccess
 }: AuthTabsProps) {
     return (
         <div className='flex max-lg:justify-center w-full md:w-auto h-full'>
@@ -591,6 +695,7 @@ const AuthTabs = memo(function AuthTabs({
                     onSubmit={handleSubmit}
                     goTo={goTo}
                     googleLogin={googleLogin}
+                    onGoogleSuccess={onGoogleSuccess}
                 />
             </div>
         </div>

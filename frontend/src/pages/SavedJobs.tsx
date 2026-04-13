@@ -3,6 +3,7 @@ import {
     Bookmark,
     MapPin,
     Clock,
+    IndianRupee,
     ChevronRight,
     Search,
     Loader2,
@@ -136,7 +137,10 @@ const SavedJobs: React.FC = () => {
                                 </div>
 
                                 <div className="mt-auto flex items-center justify-between pt-6 border-t border-slate-100 dark:border-slate-800">
-                                    <span className="text-lg font-black text-primary-600">{job.salary_range}</span>
+                                    <div className="flex items-center gap-1.5 text-primary-600 font-black text-lg">
+                                        <IndianRupee size={18} />
+                                        {job.salary_range}
+                                    </div>
                                     <Link
                                         to={`/jobs/${job.id}`}
                                         className="flex items-center gap-2 text-sm font-black text-slate-900 dark:text-white hover:text-primary-600 transition-colors group/link"

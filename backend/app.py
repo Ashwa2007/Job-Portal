@@ -4,8 +4,13 @@ from flask_jwt_extended import JWTManager, create_access_token, jwt_required, ge
 from dotenv import load_dotenv
 from models import db, User, Job, UserRole, JobType, Application, ApplicationStatus, Notification, SavedJob, Follow, CompanyUpdate, UpdateLike, UpdateComment
 import bcrypt
+from google.oauth2 import id_token
+from google.auth.transport import requests
+import uuid
 import os
 from datetime import datetime, timedelta
+import random
+from flask_mail import Mail, Message
 
 load_dotenv()
 
@@ -19,6 +24,24 @@ app.config['UPLOAD_FOLDER'] = os.path.join(os.getcwd(), 'uploads')
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
+# Mail Configuration
+app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER')
+app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
+app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'True') == 'True'
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER')
+
+mail = Mail(app)
+
+# Test mail connection on startup
+with app.app_context():
+    try:
+        with mail.connect() as conn:
+            print("MAIL STATUS: Successfully connected to SMTP server.")
+    except Exception as e:
+        print(f"MAIL STATUS ERROR: Could not connect to mail server: {e}")
+
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
@@ -26,6 +49,12 @@ def uploaded_file(filename):
 CORS(app)
 db.init_app(app)
 jwt = JWTManager(app)
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['Cross-Origin-Opener-Policy'] = 'same-origin-allow-popups'
+    response.headers['Cross-Origin-Embedder-Policy'] = 'credentialless'
+    return response
 
 # Create tables
 with app.app_context():
@@ -58,11 +87,102 @@ def register():
         
         db.session.add(new_user)
         db.session.commit()
-        print(f"User created successfully: {new_user.email} with role {new_user.role.value}")
-        return jsonify({"message": "Account created successfully! Please log in."}), 201
+        
+        # Send OTP
+        otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+        new_user.otp = otp
+        new_user.otp_expiry = datetime.utcnow() + timedelta(minutes=10)
+        db.session.commit()
+        
+        try:
+            msg = Message("Verify Your Job Portal Account",
+                          recipients=[new_user.email])
+            msg.body = f"Hello {new_user.full_name},\n\nYour OTP for account verification is: {otp}\n\nThis code will expire in 10 minutes."
+            mail.send(msg)
+            print(f"--- OTP SENT TO {new_user.email} ---")
+            print(f"CODE: {otp}")
+            print(f"---------------------------")
+        except Exception as e:
+            print(f"CRITICAL MAIL ERROR: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            # Even if email fails, user is created. We can inform them.
+            return jsonify({"message": f"Account created but verification email failed. Error: {str(e)}", "id": new_user.id}), 201
+
+        return jsonify({"message": "Registration successful! Please verify the OTP sent to your email.", "id": new_user.id}), 201
     except Exception as e:
         print(f"Registration error: {str(e)}")
+        db.session.rollback()
         return jsonify({"message": "An error occurred during registration"}), 500
+
+
+@app.route('/api/auth/verify-otp', methods=['POST'])
+def verify_otp():
+    data = request.get_json()
+    email = data.get('email')
+    otp = data.get('otp')
+    
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({"message": "User not found"}), 404
+    
+    if user.otp == otp and user.otp_expiry > datetime.utcnow():
+        user.is_verified = True
+        user.otp = None
+        user.otp_expiry = None
+        db.session.commit()
+        return jsonify({"message": "Account verified successfully!"}), 200
+    
+    return jsonify({"message": "Invalid or expired OTP"}), 400
+
+
+@app.route('/api/auth/forgot-password', methods=['POST'])
+def forgot_password():
+    data = request.get_json()
+    email = data.get('email')
+    
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        # Don't reveal if user exists for security, or keep it simple as requested
+        return jsonify({"message": "If an account exists with that email, we've sent an OTP."}), 200
+    
+    otp = ''.join([str(random.randint(0, 9)) for _ in range(6)])
+    user.otp = otp
+    user.otp_expiry = datetime.utcnow() + timedelta(minutes=10)
+    db.session.commit()
+    
+    try:
+        msg = Message("Password Reset OTP - Job Portal",
+                      recipients=[user.email])
+        msg.body = f"Hello {user.full_name},\n\nYour OTP for password reset is: {otp}\n\nThis code will expire in 10 minutes."
+        mail.send(msg)
+        return jsonify({"message": "Password reset OTP sent to your email."}), 200
+    except Exception as e:
+        print(f"Forgot password email error: {str(e)}")
+        return jsonify({"message": "Failed to send OTP. Please try again later."}), 500
+
+
+@app.route('/api/auth/reset-password', methods=['POST'])
+def reset_password():
+    data = request.get_json()
+    email = data.get('email')
+    otp = data.get('otp')
+    new_password = data.get('new_password')
+    
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({"message": "User not found"}), 404
+    
+    if user.otp == otp and user.otp_expiry > datetime.utcnow():
+        hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
+        user.password_hash = hashed_password.decode('utf-8')
+        user.otp = None
+        user.otp_expiry = None
+        user.is_verified = True # Resetting password also verifies account if it wasn't
+        db.session.commit()
+        return jsonify({"message": "Password reset successful!"}), 200
+    
+    return jsonify({"message": "Invalid or expired OTP"}), 400
 
 
 @app.route('/api/auth/login', methods=['POST'])
@@ -80,11 +200,79 @@ def login():
                 "full_name": user.full_name,
                 "role": user.role.value,
                 "is_verified": user.is_verified,
-                "profile_picture": f"http://127.0.0.1:5001/uploads/{user.profile_picture}" if user.profile_picture else None
+                "profile_picture": f"{request.host_url.rstrip('/')}/uploads/{user.profile_picture}" if user.profile_picture else None
             }
         }), 200
     
     return jsonify({"message": "Invalid email or password. Please check your credentials."}), 401
+    
+
+@app.route('/api/auth/google', methods=['POST'])
+def google_login():
+    data = request.get_json()
+    token = data.get('token')
+    
+    if not token:
+        return jsonify({"message": "Token is required"}), 400
+        
+    try:
+        # Verify the Google ID token
+        idinfo = id_token.verify_oauth2_token(
+            token, 
+            requests.Request(), 
+            os.getenv('GOOGLE_CLIENT_ID')
+        )
+        
+        email = idinfo['email']
+        name = idinfo.get('name', '')
+        picture = idinfo.get('picture', '')
+        role_selection = data.get('role', 'job_seeker')
+        
+        # Check if user exists
+        user = User.query.filter_by(email=email).first()
+        
+        if not user:
+            # Create new user if they don't exist
+            # Generate a random password hash since they use Google
+            random_password = str(uuid.uuid4())
+            hashed_password = bcrypt.hashpw(random_password.encode('utf-8'), bcrypt.gensalt())
+            
+            user = User(
+                email=email,
+                password_hash=hashed_password.decode('utf-8'),
+                full_name=name,
+                role=UserRole(role_selection),
+                is_verified=True # Google users are pre-verified
+            )
+            db.session.add(user)
+            db.session.commit()
+            print(f"Google User created: {user.email} with role {user.role}")
+            
+        access_token = create_access_token(identity=str(user.id))
+        
+        # Determine profile picture URL
+        profile_pic_url = picture
+        if user.profile_picture:
+            profile_pic_url = f"http://127.0.0.1:5001/uploads/{user.profile_picture}"
+            
+        return jsonify({
+            "access_token": access_token,
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name,
+                "role": user.role.value,
+                "is_verified": user.is_verified,
+                "profile_picture": profile_pic_url
+            }
+        }), 200
+        
+    except ValueError as e:
+        print(f"Google Token Verification Error: {str(e)}")
+        return jsonify({"message": "Invalid Google token"}), 401
+    except Exception as e:
+        print(f"Google Auth Error: {str(e)}")
+        return jsonify({"message": "An error occurred during Google authentication"}), 500
 
 
 # --- Job Endpoints ---
@@ -712,24 +900,26 @@ def update_settings():
 @jwt_required()
 def deactivate_account():
     user_id = int(get_jwt_identity())
+    print(f"DEACTIVATE REQUEST: User ID {user_id}")
     user = User.query.get(user_id)
     
-    # Check if there are active jobs or applications (optional safety)
-    # For now, just delete the user (this will cascade delete based on DB setup)
-    # Note: Flask-SQLAlchemy needs cascade defined in models if you want it automatic
-    
-    try:
-        # Manually clear associations if cascade isn't perfect
-        Application.query.filter_by(user_id=user_id).delete()
-        SavedJob.query.filter_by(user_id=user_id).delete()
-        Notification.query.filter_by(user_id=user_id).delete()
+    if not user:
+        print(f"DEACTIVATE ERROR: User {user_id} not found")
+        return jsonify({"message": "User not found"}), 404
         
+    try:
+        # With our new cascade="all, delete-orphan" settings,
+        # simply deleting the user object will clean up everything else.
         db.session.delete(user)
         db.session.commit()
+        print(f"DEACTIVATE SUCCESS: User {user_id} removed")
         return jsonify({"message": "Account deactivated successfully"}), 200
     except Exception as e:
         db.session.rollback()
-        return jsonify({"message": f"Error deactivating account: {str(e)}"}), 500
+        print(f"DEACTIVATE CRITICAL ERROR: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"message": f"Server error during deactivation: {str(e)}"}), 500
 
 @app.route('/api/user/avatar', methods=['POST'])
 @jwt_required()
@@ -754,7 +944,7 @@ def upload_avatar():
         
         return jsonify({
             "message": "Avatar updated",
-            "url": f"http://127.0.0.1:5001/uploads/{filename}"
+            "url": f"{request.host_url.rstrip('/')}/uploads/{filename}"
         }), 200
 
 if __name__ == '__main__':

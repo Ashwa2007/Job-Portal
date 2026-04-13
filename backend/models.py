@@ -17,12 +17,14 @@ class User(db.Model):
     full_name = db.Column(db.String(100), nullable=False)
     role = db.Column(db.Enum(UserRole), default=UserRole.JOB_SEEKER)
     is_verified = db.Column(db.Boolean, default=False)
+    otp = db.Column(db.String(6), nullable=True)
+    otp_expiry = db.Column(db.DateTime, nullable=True)
     profile_picture = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # Relationships
-    jobs = db.relationship('Job', backref='recruiter', lazy=True)
-    applications = db.relationship('Application', backref='applicant', lazy=True)
+    # Relationships with cascades
+    jobs = db.relationship('Job', backref='recruiter', lazy=True, cascade='all, delete-orphan')
+    applications = db.relationship('Application', backref='applicant', lazy=True, cascade='all, delete-orphan')
 
 class JobType(enum.Enum):
     FULL_TIME = 'full_time'
@@ -44,7 +46,7 @@ class Job(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Relationships
-    applications = db.relationship('Application', backref='job', lazy=True)
+    applications = db.relationship('Application', backref='job', lazy=True, cascade='all, delete-orphan')
 
 class ApplicationStatus(enum.Enum):
     PENDING = 'pending'
@@ -70,7 +72,7 @@ class Notification(db.Model):
     is_read = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    user = db.relationship('User', backref=db.backref('notifications', lazy=True))
+    user = db.relationship('User', backref=db.backref('notifications', lazy=True, cascade='all, delete-orphan'))
 
 class SavedJob(db.Model):
     __tablename__ = 'saved_jobs'
@@ -80,8 +82,8 @@ class SavedJob(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     # Relationships
-    user = db.relationship('User', backref=db.backref('saved_jobs', lazy=True))
-    job = db.relationship('Job', backref=db.backref('saved_by', lazy=True))
+    user = db.relationship('User', backref=db.backref('saved_jobs', lazy=True, cascade='all, delete-orphan'))
+    job = db.relationship('Job', backref=db.backref('saved_by', lazy=True, cascade='all, delete-orphan'))
 
 class Follow(db.Model):
     __tablename__ = 'follows'
@@ -90,8 +92,8 @@ class Follow(db.Model):
     followed_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False) # The recruiter/company
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    follower = db.relationship('User', foreign_keys=[follower_id], backref=db.backref('following', lazy=True))
-    followed = db.relationship('User', foreign_keys=[followed_id], backref=db.backref('followers', lazy=True))
+    follower = db.relationship('User', foreign_keys=[follower_id], backref=db.backref('following', lazy=True, cascade='all, delete-orphan'))
+    followed = db.relationship('User', foreign_keys=[followed_id], backref=db.backref('followers', lazy=True, cascade='all, delete-orphan'))
 
 class CompanyUpdate(db.Model):
     __tablename__ = 'company_updates'
@@ -102,7 +104,7 @@ class CompanyUpdate(db.Model):
     image_url = db.Column(db.String(500), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    recruiter = db.relationship('User', backref=db.backref('updates', lazy=True))
+    recruiter = db.relationship('User', backref=db.backref('updates', lazy=True, cascade='all, delete-orphan'))
 
 class UpdateLike(db.Model):
     __tablename__ = 'update_likes'
@@ -111,7 +113,7 @@ class UpdateLike(db.Model):
     update_id = db.Column(db.Integer, db.ForeignKey('company_updates.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    user = db.relationship('User', backref=db.backref('update_likes', lazy=True))
+    user = db.relationship('User', backref=db.backref('update_likes', lazy=True, cascade='all, delete-orphan'))
     update = db.relationship('CompanyUpdate', backref=db.backref('likes', lazy='dynamic', cascade='all, delete-orphan'))
 
 class UpdateComment(db.Model):
@@ -122,5 +124,5 @@ class UpdateComment(db.Model):
     content = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    user = db.relationship('User', backref=db.backref('update_comments', lazy=True))
+    user = db.relationship('User', backref=db.backref('update_comments', lazy=True, cascade='all, delete-orphan'))
     update = db.relationship('CompanyUpdate', backref=db.backref('comments', lazy=True, cascade='all, delete-orphan', order_by='UpdateComment.created_at.desc()'))

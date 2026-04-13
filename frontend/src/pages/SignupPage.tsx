@@ -69,6 +69,8 @@ const SignupPage: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
+    const [step, setStep] = useState<'signup' | 'verify'>('signup');
+    const [otp, setOtp] = useState('');
     const navigate = useNavigate();
 
     const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -99,14 +101,73 @@ const SignupPage: React.FC = () => {
             const data = await response.json();
 
             if (response.ok) {
-                setSuccess(true);
-                setTimeout(() => navigate('/login'), 2000);
+                setStep('verify');
             } else {
                 setError(data.message || 'Registration failed. This account may already exist.');
             }
         } catch (error) {
             console.error('Registration error:', error);
             setError('Connection failed. Please check if the server is running.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleVerifyOtp = async (e: FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            const response = await fetch('http://127.0.0.1:5001/api/auth/verify-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: formData.email, otp })
+            });
+
+            if (response.ok) {
+                setSuccess(true);
+                setTimeout(() => navigate('/login'), 2000);
+            } else {
+                const data = await response.json();
+                setError(data.message || 'Invalid OTP');
+            }
+        } catch (error) {
+            setError('Verification failed. Try again.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleGoogleSuccess = async (credentialResponse: any) => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const response = await fetch('http://127.0.0.1:5001/api/auth/google', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    token: credentialResponse.credential,
+                    role: formData.role // Pass selected role from UI
+                })
+            });
+
+            if (!response.ok) {
+                const data = await response.json();
+                setError(data.message || 'Google signup failed.');
+                return;
+            }
+
+            await response.json();
+            // Since signup with google acts as login
+            setSuccess(true);
+            setTimeout(() => {
+                // We logicially might want to auto-login here, but simple redirect for safety
+                navigate('/login');
+            }, 1500);
+        } catch (error) {
+            console.error('Google signup error:', error);
+            setError('Connection Error: Unable to reach auth server.');
         } finally {
             setIsLoading(false);
         }
@@ -140,6 +201,21 @@ const SignupPage: React.FC = () => {
         ],
         submitButton: isLoading ? 'Creating Account...' : 'Get Started Now',
         textVariantButton: "Already a member? Sign in here",
+    };
+
+    const otpFields = {
+        header: 'Verify Email',
+        subHeader: `We've sent a code to ${formData.email}`,
+        fields: [
+            {
+                label: 'OTP Code',
+                required: true,
+                type: 'otp',
+                placeholder: 'Enter 6-digit code',
+                onChange: (e: ChangeEvent<HTMLInputElement>) => setOtp(e.target.value),
+            },
+        ],
+        submitButton: isLoading ? 'Verifying...' : 'Verify & Continue',
     };
 
     if (success) {
@@ -223,11 +299,20 @@ const SignupPage: React.FC = () => {
                     </div>
 
                     <div className="p-8 md:p-12 pt-4">
-                        <AuthTabs
-                            formFields={formFields}
-                            goTo={() => navigate('/login')}
-                            handleSubmit={handleSubmit}
-                        />
+                        {step === 'signup' ? (
+                            <AuthTabs
+                                formFields={formFields}
+                                goTo={() => navigate('/login')}
+                                handleSubmit={handleSubmit}
+                                onGoogleSuccess={handleGoogleSuccess}
+                            />
+                        ) : (
+                            <AuthTabs
+                                formFields={otpFields}
+                                goTo={() => setStep('signup')}
+                                handleSubmit={handleVerifyOtp}
+                            />
+                        )}
 
                         <div className="mt-8 flex justify-center">
                             <Link to="/" className="text-slate-400 hover:text-primary-600 transition-colors text-xs font-black uppercase tracking-widest flex items-center gap-2 group">
